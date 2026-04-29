@@ -2,8 +2,11 @@
 using EPiServer;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
+using EPiServer.DataAccess;
 using EPiServer.Framework;
 using EPiServer.Framework.Initialization;
+using EPiServer.Security;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace DeltaX.Infrastructure.Initialization
 {
@@ -11,29 +14,36 @@ namespace DeltaX.Infrastructure.Initialization
     [ModuleDependency(typeof(EPiServer.Initialization.CmsCoreInitialization))]
     public class SettingsInitialization : IInitializableModule
     {
+        public static readonly Guid SettingsRootGuid = new Guid("AAC644DF-B87A-43BE-AD5B-9FC3917C12DD");
         public static readonly Guid SettingsPageGuid = new Guid("4A21D123-5566-4B88-99AA-123456789ABC");
 
         public void Initialize(InitializationEngine context)
         {
+            var registration = context.Locate.Advanced.GetService<SettingsRegistration>();
+            if (registration == null) return; // AddSettingManager<T> was not called
+
             var contentRepository = context.Locate.ContentRepository();
             var contentTypeRepository = context.Locate.ContentTypeRepository();
 
-            // 1. Check if the "Settings" root already exists under the system Root
-            var root = ContentReference.RootPage;
-            var settingsRoot = contentRepository.GetChildren<SettingsContainerPage>(root).FirstOrDefault();
-
-            if (settingsRoot == null)
+            // 1. Ensure the Settings Root Container exists
+            if (!contentRepository.TryGet(SettingsRootGuid, out SettingsContainerPage settingsRoot))
             {
-                // 2. Get the ContentType ID for our container
-                var contentType = contentTypeRepository.Load<SettingsContainerPage>();
+                settingsRoot = contentRepository.GetDefault<SettingsContainerPage>(ContentReference.RootPage);
+                settingsRoot.ContentGuid = SettingsRootGuid;
+                settingsRoot.Name = "Settings Root";
+                contentRepository.Save(settingsRoot, SaveAction.Publish, AccessLevel.NoAccess);
+            }
 
-                // 3. Create a new instance
-                var newSettingsPage = contentRepository.GetDefault<SettingsContainerPage>(root, contentType.ID);
+            // 2. Ensure the specific Settings Page (Type T) exists
+            if (!contentRepository.TryGet(SettingsPageGuid, out PageData _))
+            {
+                var contentType = contentTypeRepository.Load(registration.SettingsType);
+                var newSettingsPage = contentRepository.GetDefault<PageData>(settingsRoot.ContentLink, contentType.ID);
+
                 newSettingsPage.ContentGuid = SettingsPageGuid;
-                newSettingsPage.PageName = "Settings";
+                newSettingsPage.Name = "Settings Page";
 
-                // 4. Save and Publish
-                contentRepository.Save(newSettingsPage, EPiServer.DataAccess.SaveAction.Publish, EPiServer.Security.AccessLevel.NoAccess);
+                contentRepository.Save(newSettingsPage, SaveAction.Publish, AccessLevel.NoAccess);
             }
         }
 
