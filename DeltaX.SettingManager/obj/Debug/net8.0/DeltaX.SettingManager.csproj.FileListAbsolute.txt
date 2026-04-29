@@ -1,0 +1,12 @@
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\bin\Debug\net8.0\DeltaX.SettingManager.deps.json
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\bin\Debug\net8.0\DeltaX.SettingManager.dll
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\bin\Debug\net8.0\DeltaX.SettingManager.pdb
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\obj\Debug\net8.0\DeltaX.SettingManager.csproj.AssemblyReference.cache
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\obj\Debug\net8.0\DeltaX.SettingManager.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\obj\Debug\net8.0\DeltaX.SettingManager.AssemblyInfoInputs.cache
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\obj\Debug\net8.0\DeltaX.SettingManager.AssemblyInfo.cs
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\obj\Debug\net8.0\DeltaX.SettingManager.csproj.CoreCompileInputs.cache
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\obj\Debug\net8.0\DeltaX.SettingManager.dll
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\obj\Debug\net8.0\refint\DeltaX.SettingManager.dll
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\obj\Debug\net8.0\DeltaX.SettingManager.pdb
+C:\Users\vimvq\source\repos\DeltaX.SettingManager\DeltaX.SettingManager\obj\Debug\net8.0\ref\DeltaX.SettingManager.dll
