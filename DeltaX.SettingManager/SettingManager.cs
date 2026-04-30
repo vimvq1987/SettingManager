@@ -1,5 +1,4 @@
-﻿using DeltaX.Infrastructure.Initialization;
-using EPiServer;
+﻿using EPiServer;
 using EPiServer.Core;
 using EPiServer.Framework.Cache;
 using EPiServer.Web;
@@ -12,55 +11,47 @@ namespace DeltaX.SettingManager
     public class SettingManager
     {
         private readonly ISynchronizedObjectInstanceCache _cache;
-        private readonly IPermanentLinkMapper _permanentLinkMapper;
         private readonly IContentLoader _contentLoader;
         private readonly IContentCacheKeyCreator _contentCacheKeyCreator;
-        private readonly IContentEvents _contentEvents;
+        private readonly ISiteDefinitionRepository _siteDefinitionRepository;
+        private readonly ISiteDefinitionResolver _siteDefinitionResolver;
 
-        private readonly ContentReference _settingPageContentLink;
-        private const string CacheKey = "Settings:AllValues";
+        private const string DataCacheKeyPrefix = "Settings:Data:";
+        private const string LinkCacheKeyPrefix = "Settings:Link:";
 
         public SettingManager(
             ISynchronizedObjectInstanceCache cache,
-            IPermanentLinkMapper permanentLinkMapper,
             IContentLoader contentLoader,
             IContentCacheKeyCreator contentCacheKeyCreator,
-            IContentEvents contentEvents)
+            ISiteDefinitionRepository siteDefinitionRepository,
+            ISiteDefinitionResolver siteDefinitionResolver)
         {
             _cache = cache;
-            _permanentLinkMapper = permanentLinkMapper;
             _contentLoader = contentLoader;
             _contentCacheKeyCreator = contentCacheKeyCreator;
-            _contentEvents = contentEvents;
-
-            var map = _permanentLinkMapper.Find(SettingsInitialization.SettingsPageGuid);
-            _settingPageContentLink = map?.ContentReference ?? ContentReference.EmptyReference;
-
-            // Subscribe to the event to clear the cache when the page is published
-            _contentEvents.PublishedContent += ContentEvents_PublishedContent;
+            _siteDefinitionRepository = siteDefinitionRepository;
+            _siteDefinitionResolver = siteDefinitionResolver;
         }
 
-        private void ContentEvents_PublishedContent(object? sender, ContentEventArgs e)
+        public T? GetSetting<T>(string name, string? siteName = null)
         {
-            if (e.Content is SettingsPage)
-            {
-                // This call triggers the remote invalidation signal to all other instances
-                _cache.Remove(CacheKey);
-            }
-        }
+            var site = GetSite(siteName);
+            if (site == null || ContentReference.IsNullOrEmpty(site.StartPage)) return default;
 
-        public T? GetSetting<T>(string name)
-        {
-            // We fetch from the Synchronized Cache every time. 
-            // This is extremely fast (local memory lookup) but stays in sync across instances.
+            // 1. Get the Link (Cached)
+            var settingsPageLink = GetCachedSettingsPageLink(site);
+            if (ContentReference.IsNullOrEmpty(settingsPageLink)) return default;
+
+            // 2. Get the Dictionary (Cached)
+            string dataCacheKey = $"{DataCacheKeyPrefix}{site.Id}";
             var settings = _cache.ReadThrough(
-                CacheKey,
-                () => LoadFromDatabase(),
+                dataCacheKey,
+                () => LoadFromDatabase(settingsPageLink),
                 _ => new CacheEvictionPolicy(
                     TimeSpan.FromMinutes(30),
                     CacheTimeoutType.Sliding,
-                    new[] { _contentCacheKeyCreator.CreateCommonCacheKey(_settingPageContentLink) }),
-                ReadStrategy.Wait // <--- This provides the "Lock on loading" behavior
+                    new[] { _contentCacheKeyCreator.CreateCommonCacheKey(settingsPageLink) }),
+                ReadStrategy.Wait
             );
 
             if (settings != null && settings.TryGetValue(name, out var value))
@@ -71,12 +62,44 @@ namespace DeltaX.SettingManager
             return default;
         }
 
-        private IDictionary<string, object> LoadFromDatabase()
+        private ContentReference GetCachedSettingsPageLink(SiteDefinition site)
         {
-            if (ContentReference.IsNullOrEmpty(_settingPageContentLink))
-                return new Dictionary<string, object>();
+            string linkCacheKey = $"{LinkCacheKeyPrefix}{site.Id}";
 
-            var page = _contentLoader.Get<PageData>(_settingPageContentLink);
+            return _cache.ReadThrough(linkCacheKey, () =>
+            {
+                // Traverse the tree only when the cache is empty
+                var container = _contentLoader.GetChildren<SettingsContainerPage>(site.StartPage)
+                    .FirstOrDefault(x => x.Name.Equals("Settings Root", StringComparison.OrdinalIgnoreCase));
+
+                if (container == null) return ContentReference.EmptyReference;
+
+                var settingsPage = _contentLoader.GetChildren<PageData>(container.ContentLink)
+                    .FirstOrDefault();
+
+                return settingsPage?.ContentLink ?? ContentReference.EmptyReference;
+
+            }, _ => new CacheEvictionPolicy(
+                // Evict this link if the StartPage changes or its children change
+                new[] { _contentCacheKeyCreator.CreateCommonCacheKey(site.StartPage) }
+            ));
+        }
+
+        private SiteDefinition? GetSite(string? siteName)
+        {
+            if (string.IsNullOrWhiteSpace(siteName))
+            {
+                return _siteDefinitionResolver.GetByHostname(HostDefinition.WildcardHostName, true);
+            }
+
+            return _siteDefinitionRepository
+                .List()
+                .FirstOrDefault(x => x.Name.Equals(siteName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private IDictionary<string, object> LoadFromDatabase(ContentReference contentLink)
+        {
+            var page = _contentLoader.Get<PageData>(contentLink);
             return page.Property.ToDictionary(
                 x => x.Name,
                 x => x.Value,

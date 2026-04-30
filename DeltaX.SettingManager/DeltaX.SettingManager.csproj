@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     
     <PackageId>DeltaX.SettingManager</PackageId>
-    <Version>1.0.1</Version>
+    <Version>1.0.3</Version>
     <Authors>Quan Mai</Authors>
     <Company>DeltaX</Company>
     <Description>A library to allow changing settings on the fly.</Description>
@@ -25,7 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="EPiServer.Cms.Core" Version="12.23.0" />
+    <PackageReference Include="EPiServer.Cms.AspNetCore" Version="12.10.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
   </ItemGroup>
 

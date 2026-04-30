@@ -1,5 +1,4 @@
-﻿using System;
-using DeltaX.SettingManager;
+﻿using DeltaX.SettingManager;
 using EPiServer;
 using EPiServer.Core;
 using EPiServer.DataAbstraction;
@@ -7,16 +6,20 @@ using EPiServer.DataAccess;
 using EPiServer.Framework;
 using EPiServer.Framework.Initialization;
 using EPiServer.Security;
+using EPiServer.ServiceLocation;
+using EPiServer.Web;
 using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Linq;
 
 namespace DeltaX.Infrastructure.Initialization
 {
     [InitializableModule]
-    [ModuleDependency(typeof(EPiServer.Initialization.CmsCoreInitialization))]
+    [ModuleDependency(typeof(EPiServer.Web.InitializationModule))]
     public class SettingsInitialization : IInitializableModule
     {
-        public static readonly Guid SettingsRootGuid = new Guid("AAC644DF-B87A-43BE-AD5B-9FC3917C12DD");
-        public static readonly Guid SettingsPageGuid = new Guid("4A21D123-5566-4B88-99AA-123456789ABC");
+        private const string ContainerName = "Settings Root";
+        private const string PageName = "Settings Page";
 
         public void Initialize(InitializationEngine context)
         {
@@ -26,38 +29,52 @@ namespace DeltaX.Infrastructure.Initialization
             var contentRepository = context.Locate.ContentRepository();
             var contentTypeRepository = context.Locate.ContentTypeRepository();
             var securityRepository = context.Locate.Advanced.GetInstance<IContentSecurityRepository>();
+            var siteRepository = context.Locate.Advanced.GetInstance<ISiteDefinitionRepository>();
 
-            // 1. Ensure the Settings Root Container exists
-            if (!contentRepository.TryGet(SettingsRootGuid, out SettingsContainerPage settingsRoot))
+            // Iterate through every site defined in the CMS
+            foreach (var site in siteRepository.List())
             {
-                settingsRoot = contentRepository.GetDefault<SettingsContainerPage>(ContentReference.RootPage);
-                settingsRoot.ContentGuid = SettingsRootGuid;
-                settingsRoot.Name = "Settings Root";
+                if (ContentReference.IsNullOrEmpty(site.StartPage)) continue;
 
-                var rootReference = contentRepository.Save(settingsRoot, SaveAction.Publish, AccessLevel.NoAccess);
+                // 1. Ensure the Settings Root Container exists under this specific site root
+                var settingsRoot = contentRepository.GetChildren<SettingsContainerPage>(site.StartPage)
+                    .FirstOrDefault(x => x.Name.Equals(ContainerName, StringComparison.OrdinalIgnoreCase));
 
-                // Set ACL for Root
-                SetAdminOnlyAccess(rootReference, securityRepository);
-            }
+                if (settingsRoot == null)
+                {
+                    settingsRoot = contentRepository.GetDefault<SettingsContainerPage>(site.StartPage);
+                    settingsRoot.Name = ContainerName;
 
-            // 2. Ensure the specific Settings Page exists
-            if (!contentRepository.TryGet(SettingsPageGuid, out PageData settingsPage))
-            {
-                var contentType = contentTypeRepository.Load(registration.SettingsType);
-                var newSettingsPage = contentRepository.GetDefault<PageData>(settingsRoot.ContentLink, contentType.ID);
+                    var rootReference = contentRepository.Save(settingsRoot, SaveAction.Publish, AccessLevel.NoAccess);
 
-                newSettingsPage.ContentGuid = SettingsPageGuid;
-                newSettingsPage.Name = "Settings Page";
+                    // Set ACL for Root (Admin Only)
+                    SetAdminOnlyAccess(rootReference, securityRepository);
 
-                var pageReference = contentRepository.Save(newSettingsPage, SaveAction.Publish, AccessLevel.NoAccess);
+                    // Reload to get the proper reference for children
+                    settingsRoot = contentRepository.Get<SettingsContainerPage>(rootReference);
+                }
 
-                // Set ACL for Page (though it would inherit from Root, explicit setting ensures security)
-                SetAdminOnlyAccess(pageReference, securityRepository);
+                // 2. Ensure the specific Settings Page exists under the container
+                var settingsPage = contentRepository.GetChildren<PageData>(settingsRoot.ContentLink)
+                    .FirstOrDefault(x => x.ContentTypeID == contentTypeRepository.Load(registration.SettingsType).ID);
+
+                if (settingsPage == null)
+                {
+                    var contentType = contentTypeRepository.Load(registration.SettingsType);
+                    var newSettingsPage = contentRepository.GetDefault<PageData>(settingsRoot.ContentLink, contentType.ID);
+
+                    newSettingsPage.Name = PageName;
+
+                    var pageReference = contentRepository.Save(newSettingsPage, SaveAction.Publish, AccessLevel.NoAccess);
+
+                    // Set ACL for Page (Admin Only)
+                    SetAdminOnlyAccess(pageReference, securityRepository);
+                }
             }
         }
 
         /// <summary>
-        /// Clears existing permissions and grants full access ONLY to Administrators and WebAdmins.
+        /// Breaks inheritance and grants Full Access only to Administrators and WebAdmins.
         /// </summary>
         private void SetAdminOnlyAccess(ContentReference contentLink, IContentSecurityRepository securityRepository)
         {
@@ -65,14 +82,9 @@ namespace DeltaX.Infrastructure.Initialization
 
             if (securityDescriptor != null)
             {
-                // 1. Break inheritance from the parent
                 securityDescriptor.IsInherited = false;
-
-                // 2. Clear any existing entries to start fresh
                 securityDescriptor.Clear();
 
-                // 3. Add Admin roles with Full Access
-                // "WebAdmins" and "Administrators" are the standard Optimizely admin roles
                 var adminEntries = new[] { "WebAdmins", "Administrators" };
 
                 foreach (var role in adminEntries)
@@ -80,7 +92,6 @@ namespace DeltaX.Infrastructure.Initialization
                     securityDescriptor.AddEntry(new AccessControlEntry(role, AccessLevel.FullAccess));
                 }
 
-                // 4. Save the changes
                 securityRepository.Save(contentLink, securityDescriptor, SecuritySaveType.Replace);
             }
         }
