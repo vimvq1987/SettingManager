@@ -3,6 +3,7 @@ using EPiServer.Core;
 using EPiServer.Framework.Cache;
 using EPiServer.Web;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -17,7 +18,9 @@ namespace DeltaX.SettingManager
         private readonly ISiteDefinitionResolver _siteDefinitionResolver;
 
         private const string DataCacheKeyPrefix = "Settings:Data:";
-        private const string LinkCacheKeyPrefix = "Settings:Link:";
+
+        // Static thread-safe dictionary to store links for the lifetime of the AppDomain
+        private static readonly ConcurrentDictionary<Guid, ContentReference> _localLinkCache = new();
 
         public SettingManager(
             ISynchronizedObjectInstanceCache cache,
@@ -38,11 +41,11 @@ namespace DeltaX.SettingManager
             var site = GetSite(siteName);
             if (site == null || ContentReference.IsNullOrEmpty(site.StartPage)) return default;
 
-            // 1. Get the Link (Cached)
-            var settingsPageLink = GetCachedSettingsPageLink(site);
+            // 1. Get the Link (Stored in local static memory)
+            var settingsPageLink = GetLocalSettingsPageLink(site);
             if (ContentReference.IsNullOrEmpty(settingsPageLink)) return default;
 
-            // 2. Get the Dictionary (Cached)
+            // 2. Get the Dictionary (Cached with eviction policy so data updates reflect)
             string dataCacheKey = $"{DataCacheKeyPrefix}{site.Id}";
             var settings = _cache.ReadThrough(
                 dataCacheKey,
@@ -62,13 +65,12 @@ namespace DeltaX.SettingManager
             return default;
         }
 
-        private ContentReference GetCachedSettingsPageLink(SiteDefinition site)
+        private ContentReference GetLocalSettingsPageLink(SiteDefinition site)
         {
-            string linkCacheKey = $"{LinkCacheKeyPrefix}{site.Id}";
-
-            return _cache.ReadThrough(linkCacheKey, () =>
+            // ConcurrentDictionary.GetOrAdd ensures the logic only runs once per Site ID
+            return _localLinkCache.GetOrAdd(site.Id, _ =>
             {
-                // Traverse the tree only when the cache is empty
+                // Traverse the tree to find the page
                 var container = _contentLoader.GetChildren<SettingsContainerPage>(site.StartPage)
                     .FirstOrDefault(x => x.Name.Equals("Settings Root", StringComparison.OrdinalIgnoreCase));
 
@@ -78,11 +80,7 @@ namespace DeltaX.SettingManager
                     .FirstOrDefault();
 
                 return settingsPage?.ContentLink ?? ContentReference.EmptyReference;
-
-            }, _ => new CacheEvictionPolicy(
-                // Evict this link if the StartPage changes or its children change
-                new[] { _contentCacheKeyCreator.CreateCommonCacheKey(site.StartPage) }
-            ));
+            });
         }
 
         private SiteDefinition? GetSite(string? siteName)

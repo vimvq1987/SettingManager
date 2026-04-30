@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     
     <PackageId>DeltaX.SettingManager</PackageId>
-    <Version>1.0.3</Version>
+    <Version>0.0.1</Version>
     <Authors>Quan Mai</Authors>
     <Company>DeltaX</Company>
     <Description>A library to allow changing settings on the fly.</Description>

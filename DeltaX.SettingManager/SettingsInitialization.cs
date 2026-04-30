@@ -9,8 +9,6 @@ using EPiServer.Security;
 using EPiServer.ServiceLocation;
 using EPiServer.Web;
 using Microsoft.Extensions.DependencyInjection;
-using System;
-using System.Linq;
 
 namespace DeltaX.Infrastructure.Initialization
 {
